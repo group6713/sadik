@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Loyiha ikkita mustaqil npm loyihasidan iborat (workspace emas, ikkalasi alohida `node_modules`ga ega):
 
 ```
-backend/    Node.js + Express + Prisma (SQLite) — REST API, port 4000
+backend/    Node.js + Express + Prisma (PostgreSQL/Neon) — REST API, port 4000
 frontend/   React + Vite (JS, TypeScript emas) — SPA, port 5173
 ```
 
@@ -35,9 +35,9 @@ npm run lint       # oxlint
 npm run preview    # build natijasini ko'rish
 ```
 
-Ikkala server alohida-alohida, parallel ishga tushirilishi kerak (frontend backend'ga `http://localhost:4000/api` orqali murojaat qiladi — `frontend/src/api.js`da `VITE_API_URL` environment o'zgaruvchisidan o'qiladi, o'rnatilmagan bo'lsa shu localhost manziliga tushadi; production build uchun Netlify/hosting sozlamalarida `VITE_API_URL`ni haqiqiy backend manziliga o'rnatish kerak).
+Ikkala server alohida-alohida, parallel ishga tushirilishi kerak (frontend backend'ga `http://localhost:4000/api` orqali murojaat qiladi — `frontend/src/api.js`da `VITE_API_URL` environment o'zgaruvchisidan o'qiladi, o'rnatilmagan bo'lsa shu localhost manziliga tushadi; production build uchun hosting sozlamalarida `VITE_API_URL`ni haqiqiy backend manziliga o'rnatish kerak).
 
-**Netlify/Vercel orqali deploy:** repo tagida ikkalasi uchun ham tayyor konfiguratsiya bor — `netlify.toml` (`base = "frontend"`, `publish = "dist"`, SPA redirect) va `vercel.json` (`installCommand`/`buildCommand` `frontend/`ga `cd` qilib ishlaydi, `outputDirectory: frontend/dist`, SPA rewrite). Ikkalasi ham faqat frontend'ni (statik build) joylashtira oladi — `backend/` (Express + SQLite) ular ustida ishlamaydi (ikkalasi ham asosan statik/serverless platforma, doimiy Node server saqlamaydi). `backend/` alohida hostingga (masalan Render/Railway) joylashtirilishi va uning ochiq manzili Netlify/Vercel sayt sozlamalarida `VITE_API_URL` environment o'zgaruvchisi sifatida kiritilishi kerak — aks holda deploy qilingan sayt ochiladi, lekin login/ma'lumotlar ishlamaydi (brauzer localhost'ga so'rov yuborishga urinadi).
+**Deploy:** repo tagida ikkalasi uchun ham tayyor konfiguratsiya bor — `netlify.toml` (zaxira) va `vercel.json` (asosiy). Hozirgi production deploy stacki quyida "Deploy" bo'limida batafsil yozilgan.
 
 **Sinov uchun default loginlar** (`backend/prisma/seed.js`): `mudira` / `mudira12345` (rol: MUDIRA, barcha filiallarga kirish huquqi) va `povor` / `povor12345` (rol: POVOR, faqat o'z filialiga bog'langan). Real foydalanishdan oldin bu parollar almashtirilishi kerak.
 
@@ -45,7 +45,7 @@ Ikkala server alohida-alohida, parallel ishga tushirilishi kerak (frontend backe
 
 ### Backend — rol va ruxsat modeli
 
-To'rtta rol bor: `MUDIRA`, `POVOR`, `TARBIYACHI`, `OTA_ONA`. **Muhim:** `User.role` Prisma schema'da oddiy `String`, native enum emas — chunki SQLite'da Prisma enumlarni qo'llab-quvvatlamaydi (`backend/prisma/schema.prisma`dagi izohga qarang). Ruxsat etilgan qiymatlar faqat ilova qatlamida (`backend/src/routes/users.js` ichidagi `ROLES` massivi) tekshiriladi — schema darajasida cheklov yo'q. Yangi rol qo'shilganda shu massivni yangilash kerak.
+To'rtta rol bor: `MUDIRA`, `POVOR`, `TARBIYACHI`, `OTA_ONA`. **Muhim:** `User.role` Prisma schema'da oddiy `String`, native enum emas. Ruxsat etilgan qiymatlar faqat ilova qatlamida (`backend/src/routes/users.js` ichidagi `ROLES` massivi) tekshiriladi — schema darajasida cheklov yo'q. Yangi rol qo'shilganda shu massivni yangilash kerak.
 
 Avtorizatsiya ikki qatlamli:
 - `middleware/auth.js`: `requireAuth` (JWT tekshiradi, `req.user`ga `{id, username, role, branchId}` yozadi) va `requireRole(...roles)`.
@@ -103,6 +103,60 @@ Rasmiy "4-ILOVA. Namunaviy yillik mavzuli reja" hujjatiga asoslangan, filiallard
 - `src/pages/Mashgulotlar.jsx` — rolga qarab ikki xil ko'rinish bitta faylda: MUDIRA uchun oy tanlab yillik reja jadvalini tahrirlash, TARBIYACHI uchun faqat o'ziga (`user.ageGroup`) tegishli bugungi mavzu + yillik jadval (faqat o'qish uchun). `AGE_GROUPS` shu fayldan export qilinib `Users.jsx`da ham ishlatiladi.
 - Dizayn tokenlari (`src/index.css`): teal/stone palitra, Fraunces (display) + Work Sans (body) — Google Fonts orqali `index.html`da ulangan. Bu palitra/shrift juftligi loyihaning barcha ekranlarida (shu jumladan avvalgi bir martalik HTML artifact'da) qo'llanilgan, yangi sahifalar shu tokenlarga mos bo'lishi kerak.
 
+## Deploy — production stack (bepul)
+
+**2026-09-07 kuni to'liq deploy qilindi.** Texnik stack:
+
+| Servis | Platforma | URL |
+|--------|-----------|-----|
+| **Ma'lumotlar bazasi** | Neon (PostgreSQL, bepul) | `ep-summer-silence-aygbclni-pooler.c-5.us-east-2.aws.neon.tech` |
+| **Backend** | Vercel (serverless functions) | `https://sadik-backend.vercel.app` |
+| **Frontend** | Vercel (static build) | `https://sadik-seven.vercel.app` |
+
+### SQLite → PostgreSQL migratsiya (2026-09-07)
+
+Loyiha dastlab SQLite (lokal `dev.db` fayl) bilan ishlagan. Production deploy uchun Neon PostgreSQL'ga ko'chirildi:
+- `schema.prisma`dagi `datasource.provider` `"sqlite"` → `"postgresql"` ga o'zgartirildi
+- `migrations/migration_lock.toml`dagi provider ham `"postgresql"` ga yangilandi
+- Barcha 3 ta migration SQL fayllari PostgreSQL sintaksisiga qayta yozildi:
+  - `INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT` → `SERIAL NOT NULL` + `CONSTRAINT ... PRIMARY KEY`
+  - `DATETIME` → `TIMESTAMP(3)`
+  - `REAL` → `DOUBLE PRECISION`
+  - Foreign key'lar inline constraint'dan alohida `ALTER TABLE ... ADD CONSTRAINT` ga o'tkazildi
+- `.env`dagi `DATABASE_URL` Neon connection string bilan yangilandi
+- `npx prisma migrate deploy` bilan barcha migratsiyalar Neon'ga apply qilindi
+- `node prisma/seed.js` bilan boshlang'ich ma'lumotlar yuklandi
+
+### Vercel sozlamalari
+
+**Frontend project** (`sadik`):
+- Root Directory: `./` (bo'sh — root'dagi `vercel.json` buyruqlarini o'qiydi)
+- `vercel.json`dagi `installCommand`: `cd frontend && npm install`
+- `vercel.json`dagi `buildCommand`: `cd frontend && npm run build`
+- `vercel.json`dagi `outputDirectory`: `frontend/dist`
+- Environment Variables: `VITE_API_URL` = `https://sadik-backend.vercel.app/api` (Type: **Config**, Secret emas!)
+
+**Backend project** (`sadik-backend`):
+- Root Directory: `backend`
+- `backend/vercel.json`: `@vercel/node` builder, barcha so'rovlar `src/index.js`ga yo'naltiriladi
+- `backend/src/index.js`: `module.exports = app` (Vercel serverless uchun export) + `if (require.main === module)` (lokal dev uchun)
+- `backend/package.json`dagi `postinstall`: `prisma generate` (Vercel build vaqtida avtomatik ishlaydi)
+- Environment Variables: `DATABASE_URL` (Neon string), `JWT_SECRET` (production uchun alohida kuchli maxfiy so'z)
+
+### Muhim eslatmalar
+
+- **`VITE_API_URL`** Vercel'da **Config** turida bo'lishi kerak (Secret emas!) — `VITE_` prefiksi public framework variable, Secret bo'lsa Vercel xato beradi
+- Neon connection stringda `?sslmode=require&channel_binding=require` parametrlari majburiy
+- Backend'ni qayta deploy qilish kerak bo'lsa: GitHub'ga push qilish yetarli (auto-deploy)
+- Lokal dev hali ham ishlaydi: `.env`dagi `DATABASE_URL` Neon'ga ulangan, `npm run dev` bilan serverlarni alohida ishga tushiring
+- Render/Railway/Koyeb sinab ko'rildi, 2026-09 holatida bepul backend hosting uchun Vercel serverless eng ishonchli variant
+
+### Boshqa platformalar bo'yicha tajriba (2026-09)
+
+- **Render**: 2024 oxiridan bepul Web Service tarifi bekor qilingan — `suspended` holati beradi
+- **Railway**: Ishlaydi, lekin GitHub organization repolari uchun qo'shimcha ruxsat sozlash kerak
+- **Koyeb**: Mistral AI tomonidan sotib olingan, oddiy app hosting xizmati to'xtatilgan
+
 ## Qamrov — nima bor, nima yo'q
 
 Qurilgan: login/JWT, 4 rol, Filiallar CRUD, Foydalanuvchilar CRUD, Me'yor jadvali CRUD, Ombor (mahsulot kiritish + avtomatik "necha kunga yetadi" hisobi), Retseptlar/Taomnoma moduli (taomlar katalogi, fasl+10 kunlik taomnoma tuzish, filial bolalar soniga moslangan kunlik retsept hisobi + ombor bilan solishtirish), Mashg'ulotlar moduli (yillik mavzuli reja — oy/hafta/yosh guruhi bo'yicha, TARBIYACHI o'z guruhiga tegishli joriy mavzuni avtomatik ko'radi).
@@ -110,5 +164,3 @@ Qurilgan: login/JWT, 4 rol, Filiallar CRUD, Foydalanuvchilar CRUD, Me'yor jadval
 Retseptlar modulida TZ'dagi qismlardan hali yo'qlari: taomnoma hujjatini PDF/fayldan avtomatik import qilish yo'q (har bir taom qo'lda, UI orqali kiritiladi) va QR orqali tasdiqlash yo'q. Mashg'ulotlar modulida haftalik/kunlik konspekt (mashg'ulot ishlanmasi) yo'q — faqat mavzu nomi, TZ'dagi to'liq "haftalik mashg'ulotlar" tafsiloti emas.
 
 Hali umuman yo'q (TZ'da bor, kod bazasida yo'q): Ota-onalar bilan aloqa moduli, Oylik hisobotlar (PDF/Excel eksport). OTA_ONA roli tizimga kira oladi, lekin hozircha faqat placeholder sahifa ko'radi (`src/pages/ComingSoon.jsx`).
-
-Deploy hali qilinmagan (lokal SQLite bilan ishlaydi). Production'ga o'tishda `schema.prisma`dagi `datasource.provider`ni o'zgartirib PostgreSQL'ga ko'chirish mo'ljallangan — bu hali amalga oshirilmagan.
