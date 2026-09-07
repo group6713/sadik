@@ -29,7 +29,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Serverda kutilmagan xatolik yuz berdi" });
 });
 
-const port = process.env.PORT || 4000;
-app.listen(port, () => {
-  console.log(`MittiQadam backend http://localhost:${port}`);
-});
+// Local development uchun server start
+if (require.main === module) {
+  const port = process.env.PORT || 4000;
+  app.listen(port, () => {
+    console.log(`MittiQadam backend http://localhost:${port}`);
+  });
+}
+
+// Vercel serverless uchun export
+module.exports = app;
