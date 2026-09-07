@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Role values are validated in the route handlers against the same
+// MUDIRA/POVOR/TARBIYACHI/OTA_ONA set.
+
+model Branch {
+  id            Int      @id @default(autoincrement())
+  name          String
+  childrenCount Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  users  User[]
+  stock  StockEntry[]
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  fullName     String
+  role         String
+  branchId     Int?
+  // Faqat TARBIYACHI uchun ma'noli: '3-4' | '4-5' | '5-6' | '6-7' (backend/src/lib/ageGroups.js).
+  // Haftalik mashg'ulotlar modulida shu guruhga mos joriy mavzuni ko'rsatish uchun ishlatiladi.
+  ageGroup     String?
+  createdAt    DateTime @default(now())
+
+  branch      Branch?      @relation(fields: [branchId], references: [id])
+  stockAdded  StockEntry[]
+}
+
+model NormProduct {
+  id                  Int      @id @default(autoincrement())
+  name                String
+  unit                String   // 'g' | 'dona'
+  gramsPerChildPerDay Float
+  createdAt           DateTime @default(now())
+
+  stock        StockEntry[]
+  ingredientOf DishIngredient[]
+}
+
+// Retseptlar moduli: taomlar va ularning tarkibi (bitta bolaga necha gramm).
+// Bu StockEntry/computeStockStatus'dagi norma-asosli taxmindan alohida —
+// ombordan aniq qancha mahsulot sarflanishini taomnoma bo'yicha hisoblaydi.
+// Ikkalasi parallel yashaydi, biri ikkinchisini almashtirmaydi (CLAUDE.md).
+model Dish {
+  id        Int      @id @default(autoincrement())
+  name      String
+  mealType  String   // 'NONUSHTA' | 'TUSHLIK' | 'IKKINCHI_TUSHLIK'
+  createdAt DateTime @default(now())
+
+  ingredients DishIngredient[]
+  menuDays    MenuDayDish[]
+}
+
+model DishIngredient {
+  id            Int   @id @default(autoincrement())
+  dishId        Int
+  productId     Int
+  gramsPerChild Float // taomnomadagi "chiqitli" (yuvilmagan/tozalanmagan) og'irlik
+
+  dish    Dish        @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  product NormProduct @relation(fields: [productId], references: [id])
+}
+
+// Fasl + kun raqami bo'yicha taomnoma kuni (masalan Yoz, 1-kun).
+model MenuDay {
+  id        Int      @id @default(autoincrement())
+  season    String   // 'BAHOR' | 'YOZ' | 'KUZ' | 'QISH'
+  dayNumber Int      // 1..10
+  createdAt DateTime @default(now())
+
+  dishes MenuDayDish[]
+
+  @@unique([season, dayNumber])
+}
+
+model MenuDayDish {
+  id        Int @id @default(autoincrement())
+  menuDayId Int
+  dishId    Int
+
+  menuDay MenuDay @relation(fields: [menuDayId], references: [id], onDelete: Cascade)
+  dish    Dish    @relation(fields: [dishId], references: [id])
+
+  @@unique([menuDayId, dishId])
+}
+
+// Haftalik mashg'ulotlar moduli: rasmiy "Namunaviy yillik mavzuli reja" (4-ILOVA) asosida,
+// har bir kalendar oyning haftalari uchun yosh guruhlari bo'yicha mavzu. Ombor/Retseptlar
+// modullaridan mustaqil — bolalar sonini emas, faqat vaqt (oy+hafta) va yosh guruhini ishlatadi.
+model ActivityWeek {
+  id          Int      @id @default(autoincrement())
+  month       Int      // kalendar oy raqami: 1=Yanvar ... 12=Dekabr
+  monthTheme  String   // oy mavzusi, masalan "O'zbekiston - mening Vatanim"
+  // 1-4: odatiy hafta raqami. 0: butun oy uchun yagona yozuv (Iyun/Iyul/Avgust —
+  // yozgi sog'lomlashtirish davri, rasmiy hujjatda haftalarga bo'linmagan).
+  weekNumber  Int
+  createdAt   DateTime @default(now())
+
+  topics ActivityTopic[]
+
+  @@unique([month, weekNumber])
+}
+
+model ActivityTopic {
+  id       Int    @id @default(autoincrement())
+  weekId   Int
+  ageGroup String // '3-4' | '4-5' | '5-6' | '6-7'
+  topic    String
+
+  week ActivityWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  @@unique([weekId, ageGroup])
+}
+
+model StockEntry {
+  id            Int      @id @default(autoincrement())
+  branchId      Int
+  productId     Int
+  qty           Float
+  receivedDate  DateTime
+  supplier      String?
+  createdByUserId Int?
+  createdAt     DateTime @default(now())
+
+  branch      Branch      @relation(fields: [branchId], references: [id])
+  product     NormProduct @relation(fields: [productId], references: [id])
+  createdBy   User?       @relation(fields: [createdByUserId], references: [id])
+}

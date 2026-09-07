@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: mittiqadam-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false   # Render dashboard'dan qo'shasiz
+      - key: JWT_SECRET
+        sync: false   # Render dashboard'dan qo'shasiz
+      - key: PORT
+        value: 4000
+    plan: free
